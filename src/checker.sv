@@ -7,9 +7,9 @@ class checker_c #(parameter width=16, parameter depth =8);
   trans_fifo #(.width(width)) auxiliar; //transacción usada como auxiliar para leer el fifo emulado 
   trans_sb   #(.width(width)) to_sb; // transacción usada para comunicarse con el scoreboard
   trans_fifo  emul_fifo[$]; //this queue is going to be used as golden reference for the fifo
-  trans_fifo_mbx drv_chkr_mbx; // Este mailbox es el que comunica con el driver/monitor
+  trans_fifo_mbx mon_chkr_mbx; // Este mailbox es el que comunica con el monitor
   trans_sb_mbx  chkr_sb_mbx; // Este mailbox es el que comunica el checker con el scoreboard
-  int contador_auxiliar; 
+  int contador_auxiliar;     // Auxiliar para iterar sobre la cola en caso de reset
 
   function new();
     this.emul_fifo = {};
@@ -19,15 +19,23 @@ class checker_c #(parameter width=16, parameter depth =8);
   task run;
    $display("[%g]  El checker fue inicializado",$time);
    to_sb = new();
+
    forever begin
      to_sb = new();
-     drv_chkr_mbx.get(transaccion);
-     transaccion.print("Checker: Se recibe trasacción desde el driver");
+
+     // Se bloquea hasta que se reciba una transaccion del Monitor
+     mon_chkr_mbx.get(transaccion);     
+     transaccion.print("Checker: Se recibe trasacción desde el monitor");
      to_sb.clean();
+
      case(transaccion.tipo)
        lectura: begin
          if(0 !== emul_fifo.size()) begin //Revisa si el Fifo no está vacía
+
+          // Si el FIFO emulado tiene datos, saca el primero y compara con el observado
            auxiliar = emul_fifo.pop_front();
+
+           // Si el dato es correcto lo manda al Scoreboard
            if(transaccion.dato == auxiliar.dato) begin
              to_sb.dato_enviado = auxiliar.dato;
              to_sb.tiempo_push = auxiliar.tiempo;
@@ -37,7 +45,8 @@ class checker_c #(parameter width=16, parameter depth =8);
              to_sb.print("Checker:Transaccion Completada");
              chkr_sb_mbx.put(to_sb);
            end else begin
-             transaccion.print("Checker: Error el dato de la transacción no calza con el esperado");
+            // Si el dato es incorrecto, muestra un error
+            transaccion.print("Checker: Error el dato de la transacción no calza con el esperado");
             $display("Dato_leido= %h, Dato_Esperado = %h",transaccion.dato,auxiliar.dato);
             $finish; 
            end
@@ -56,7 +65,7 @@ class checker_c #(parameter width=16, parameter depth =8);
            to_sb.overflow = 1;
            to_sb.print("Checker: Overflow");
            chkr_sb_mbx.put(to_sb);
-           emul_fifo.push_back(transaccion);
+           emul_fifo.push_back(transaccion);  // Igual inserta el nuevo dato
          end else begin  // En caso de no estar llena simplemente guarda el dato en la fifo simulada
            transaccion.print("Checker: Escritura");
            emul_fifo.push_back(transaccion);
