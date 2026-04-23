@@ -54,6 +54,13 @@ class driver #(parameter width =16);
 	        vif.rst =1; 
 	        transaction.print("Driver: Transaccion ejecutada");
 	      end
+	      lectura_escritura: begin   // Activa push y pop en el mismo ciclo
+	        @(posedge vif.clk);
+	        vif.push = 1;
+	        vif.pop  = 1;
+	        vif.dato_in = transaction.dato;
+	        transaction.print("Driver: Transaccion lectura_escritura ejecutada");
+	      end
   
 	      default: begin
 	        $display("[%g] Driver Error: la transacción recibida no tiene tipo valido",$time);

@@ -126,6 +126,23 @@ class generator #(parameter width = 16, parameter depth = 8);
             end
           end
 
+          // ------------------------------------------------------------------
+          // Escenario 5: Secuencia de lectura/escritura simultáneas
+          // Genera num_transacciones transacciones de tipo lectura_escritura
+          // para verificar el comportamiento con push y pop activos al mismo tiempo.
+          // ------------------------------------------------------------------
+          sec_lect_escr: begin
+            $display("[%g]  Generador: escenario sec_lect_escr (%0d transacciones)", $time, num_transacciones);
+            for (int i = 0; i < num_transacciones; i++) begin
+              transaccion             = new;
+              transaccion.max_retardo = max_retardo;
+              void'(transaccion.randomize());
+              transaccion.tipo        = lectura_escritura;  // Forzar simultánea
+              transaccion.print("Generador: transaccion lectura_escritura generada");
+              gen_agnt_mbx.put(transaccion);
+            end
+          end
+
           default: begin
             $display("[%g]  Generador: instruccion desconocida recibida, se ignora", $time);
           end

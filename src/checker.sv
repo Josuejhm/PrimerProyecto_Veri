@@ -71,6 +71,33 @@ class checker_c #(parameter width=16, parameter depth =8);
            emul_fifo.push_back(transaccion);
          end
        end
+       lectura_escritura: begin
+         // Caso: push=1 y pop=1 en el mismo ciclo
+         // El FIFO saca el dato más antiguo y mete el nuevo dato simultáneamente.
+         // El tamaño del FIFO no cambia, pero sí su contenido.
+         // Casos borde:
+         //   - FIFO vacío: no hay nada que sacar → se genera underflow, igual se escribe
+         //   - FIFO lleno: se saca uno y se mete uno → no hay overflow
+         if (emul_fifo.size() == 0) begin
+           // No hay dato para leer → underflow, pero igual se escribe el nuevo dato
+           to_sb.tiempo_pop  = transaccion.tiempo;
+           to_sb.underflow   = 1;
+           to_sb.print("Checker: lectura_escritura con FIFO vacío → Underflow en lectura, se escribe igual");
+           chkr_sb_mbx.put(to_sb);
+           emul_fifo.push_back(transaccion);  // Escribir el dato nuevo
+         end else begin
+           // Hay dato disponible: sacar el más antiguo y meter el nuevo
+           auxiliar = emul_fifo.pop_front();
+           to_sb.dato_enviado = auxiliar.dato;
+           to_sb.tiempo_push  = auxiliar.tiempo;
+           to_sb.tiempo_pop   = transaccion.tiempo;
+           to_sb.completado   = 1;
+           to_sb.calc_latencia();
+           to_sb.print("Checker: lectura_escritura completada");
+           chkr_sb_mbx.put(to_sb);
+           emul_fifo.push_back(transaccion);  // Escribir el dato nuevo
+         end
+       end
        reset: begin // en caso de reset vacía la fifo simulada y envía todos los datos perdidos al SB
          contador_auxiliar = emul_fifo.size();
          for(int i =0; i<contador_auxiliar; i++)begin
