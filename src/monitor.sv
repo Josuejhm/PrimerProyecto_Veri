@@ -37,9 +37,9 @@
             // Detectar un reset para que vaciar el Checker
             if (vif.rst) begin
                 transaction = new;
-                transaction = reset;
+                transaction.tipo = reset;
                 transaction.tiempo = $time;
-                transaction.print =("Monitor: transaccion de reset observada");
+                transaction.print("Monitor: transaccion de reset observada");
                 mon_chkr_mbx.put(transaction);
             end
         end
