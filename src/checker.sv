@@ -57,7 +57,7 @@ class checker_c #(parameter width=16, parameter depth =8);
          end else begin
            // Verificacion normal: hay datos en emul_fifo y rdPtr esta sincronizado
            auxiliar = emul_fifo.pop_front();
-           if(transaccion.dato == auxiliar.dato) begin
+           if(transaccion.dato_leido == auxiliar.dato) begin  // verifica dato leido contra esperado
              to_sb.dato_enviado = auxiliar.dato;
              to_sb.tiempo_push = auxiliar.tiempo;
              to_sb.tiempo_pop = transaccion.tiempo;
@@ -114,16 +114,25 @@ class checker_c #(parameter width=16, parameter depth =8);
            chkr_sb_mbx.put(to_sb);
            // NO se agrega a emul_fifo: el hardware deja el FIFO vacio
          end else begin
-           // Hay dato disponible: sacar el más antiguo y meter el nuevo
+           // FIFO con datos: verificar dato_leido contra emul_fifo, luego agregar dato escrito
            auxiliar = emul_fifo.pop_front();
-           to_sb.dato_enviado = auxiliar.dato;
-           to_sb.tiempo_push  = auxiliar.tiempo;
-           to_sb.tiempo_pop   = transaccion.tiempo;
-           to_sb.completado   = 1;
-           to_sb.calc_latencia();
-           to_sb.print("Checker: lectura_escritura completada");
-           chkr_sb_mbx.put(to_sb);
-           emul_fifo.push_back(transaccion);  // Escribir el dato nuevo
+           if (transaccion.dato_leido == auxiliar.dato) begin
+             to_sb.dato_enviado = auxiliar.dato;
+             to_sb.tiempo_push  = auxiliar.tiempo;
+             to_sb.tiempo_pop   = transaccion.tiempo;
+             to_sb.completado   = 1;
+             to_sb.calc_latencia();
+             to_sb.print("Checker: lectura_escritura completada");
+             chkr_sb_mbx.put(to_sb);
+           end else begin
+             transaccion.print("Checker: ERROR lectura_escritura - dato leido no calza con el esperado");
+             $display("[%g] Checker ERROR #%0d: Dato_leido=0x%h, Dato_Esperado=0x%h",
+                      $time, errores+1, transaccion.dato_leido, auxiliar.dato);
+             errores++;
+             if (error_mbx != null) error_mbx.put(1);
+             $display("[%g] Checker: Total errores = %0d, se continua la simulacion",$time, errores);
+           end
+           emul_fifo.push_back(transaccion);  // El dato escrito entra al FIFO
          end
        end
        reset: begin // en caso de reset vacia la fifo simulada, resetea reads_ahead
