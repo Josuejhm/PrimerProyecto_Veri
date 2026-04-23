@@ -8,12 +8,18 @@ class checker_c #(parameter width=16, parameter depth =8);
   trans_sb   #(.width(width)) to_sb; // transacción usada para comunicarse con el scoreboard
   trans_fifo  emul_fifo[$]; //this queue is going to be used as golden reference for the fifo
   trans_fifo_mbx mon_chkr_mbx; // Este mailbox es el que comunica con el monitor
-  trans_sb_mbx  chkr_sb_mbx; // Este mailbox es el que comunica el checker con el scoreboard
-  int contador_auxiliar;     // Auxiliar para iterar sobre la cola en caso de reset
+  trans_sb_mbx  chkr_sb_mbx;  // Este mailbox es el que comunica el checker con el scoreboard
+  mailbox #(int) error_mbx;   // Mailbox para notificar errores del DUT al ScoreBoard
+  int contador_auxiliar;      // Auxiliar para iterar sobre la cola en caso de reset
+  int errores;                // Contador de errores de verificacion detectados en el DUT
+  int reads_ahead;            // Cuantos pops adelante esta rdPtr respecto a datos validos en emul_fifo
+                              // >0 significa que el hardware leyo datos invalidos (stale) y rdPtr quedo adelante
 
   function new();
     this.emul_fifo = {};
     this.contador_auxiliar = 0;
+    this.errores = 0;
+    this.reads_ahead = 0;
   endfunction 
 
   task run;
@@ -30,43 +36,63 @@ class checker_c #(parameter width=16, parameter depth =8);
 
      case(transaccion.tipo)
        lectura: begin
-         if(0 !== emul_fifo.size()) begin //Revisa si el Fifo no está vacía
-
-          // Si el FIFO emulado tiene datos, saca el primero y compara con el observado
+         // reads_ahead > 0: rdPtr esta adelantado por pops anteriores sin datos validos.
+         // El hardware leyo dato stale; el checker no puede verificar.
+         // reads_ahead == 0 y emul_fifo vacio: underflow normal, rdPtr se adelanta.
+         // reads_ahead == 0 y emul_fifo con datos: verificacion normal.
+         if (reads_ahead > 0) begin
+           // Lectura stale: rdPtr sigue adelantado, no hay dato valido que verificar
+           reads_ahead++;
+           to_sb.tiempo_pop = transaccion.tiempo;
+           to_sb.underflow = 1;
+           to_sb.print("Checker: Lectura stale (rdPtr adelantado), underflow");
+           chkr_sb_mbx.put(to_sb);
+         end else if (emul_fifo.size() == 0) begin
+           // Underflow normal: emul_fifo vacio, rdPtr avanza en el hardware
+           reads_ahead++;  // rdPtr se adelanto, futuras escrituras quedan orphaned
+           to_sb.tiempo_pop = transaccion.tiempo;
+           to_sb.underflow = 1;
+           to_sb.print("Checker: Underflow");
+           chkr_sb_mbx.put(to_sb);
+         end else begin
+           // Verificacion normal: hay datos en emul_fifo y rdPtr esta sincronizado
            auxiliar = emul_fifo.pop_front();
-
-           // Si el dato es correcto lo manda al Scoreboard
            if(transaccion.dato == auxiliar.dato) begin
              to_sb.dato_enviado = auxiliar.dato;
              to_sb.tiempo_push = auxiliar.tiempo;
-             to_sb.tiempo_pop = transaccion.dato;
+             to_sb.tiempo_pop = transaccion.tiempo;
              to_sb.completado = 1;
              to_sb.calc_latencia();
              to_sb.print("Checker:Transaccion Completada");
              chkr_sb_mbx.put(to_sb);
            end else begin
-            // Si el dato es incorrecto, muestra un error
-            transaccion.print("Checker: Error el dato de la transacción no calza con el esperado");
-            $display("Dato_leido= %h, Dato_Esperado = %h",transaccion.dato,auxiliar.dato);
-            $finish; 
+             transaccion.print("Checker: ERROR - dato recibido no calza con el esperado");
+             $display("[%g] Checker ERROR #%0d: Dato_leido=0x%h, Dato_Esperado=0x%h",$time, errores+1, transaccion.dato, auxiliar.dato);
+             errores++;
+             if (error_mbx != null) error_mbx.put(1);
+             $display("[%g] Checker: Total errores = %0d, se continua la simulacion",$time, errores);
            end
-         end else begin // si está vacía genera un underflow 
-             to_sb.tiempo_pop = transaccion.tiempo;
-             to_sb.underflow = 1;
-             to_sb.print("Checker: Underflow");
-             chkr_sb_mbx.put(to_sb);
          end
        end
        escritura: begin
-         if(emul_fifo.size() == depth)begin // Revisa si la Fifo está llena para generar un overflow
+         if (reads_ahead > 0) begin
+           // wrPtr se acerca a rdPtr: este dato va a una posicion que rdPtr ya supero o aun no llega
+           reads_ahead--;  // wrPtr avanzo, acortando la brecha
+           // El dato va a mem[wrPtr_antes], rdPtr esta en wrPtr_antes + reads_ahead_anterior
+           // Si reads_ahead llego a 0: wrPtr alcanzo a rdPtr, proxima escritura sera valida
+           $display("[%g] Checker: Escritura orphaned (rdPtr adelantado=%0d), dato 0x%h se pierde",$time, reads_ahead+1, transaccion.dato);
+           // NO se agrega a emul_fifo: rdPtr ya paso esa posicion
+         end else if(emul_fifo.size() == depth) begin
+           // Overflow normal
            auxiliar = emul_fifo.pop_front();
            to_sb.dato_enviado = auxiliar.dato;
            to_sb.tiempo_push = auxiliar.tiempo;
            to_sb.overflow = 1;
            to_sb.print("Checker: Overflow");
            chkr_sb_mbx.put(to_sb);
-           emul_fifo.push_back(transaccion);  // Igual inserta el nuevo dato
-         end else begin  // En caso de no estar llena simplemente guarda el dato en la fifo simulada
+           emul_fifo.push_back(transaccion);
+         end else begin
+           // Escritura normal
            transaccion.print("Checker: Escritura");
            emul_fifo.push_back(transaccion);
          end
@@ -79,12 +105,14 @@ class checker_c #(parameter width=16, parameter depth =8);
          //   - FIFO vacío: no hay nada que sacar → se genera underflow, igual se escribe
          //   - FIFO lleno: se saca uno y se mete uno → no hay overflow
          if (emul_fifo.size() == 0) begin
-           // No hay dato para leer → underflow, pero igual se escribe el nuevo dato
-           to_sb.tiempo_pop  = transaccion.tiempo;
-           to_sb.underflow   = 1;
-           to_sb.print("Checker: lectura_escritura con FIFO vacío → Underflow en lectura, se escribe igual");
+           // FIFO vacio: ambos punteros (wrPtr y rdPtr) avanzan juntos en el hardware.
+           // El dato escrito queda en una posicion que rdPtr ya supero → dato PERDIDO.
+           // El FIFO sigue vacio despues de la operacion.
+           to_sb.tiempo_pop = transaccion.tiempo;
+           to_sb.underflow  = 1;
+           to_sb.print("Checker: lectura_escritura FIFO vacio, underflow, dato escrito se pierde");
            chkr_sb_mbx.put(to_sb);
-           emul_fifo.push_back(transaccion);  // Escribir el dato nuevo
+           // NO se agrega a emul_fifo: el hardware deja el FIFO vacio
          end else begin
            // Hay dato disponible: sacar el más antiguo y meter el nuevo
            auxiliar = emul_fifo.pop_front();
@@ -98,7 +126,8 @@ class checker_c #(parameter width=16, parameter depth =8);
            emul_fifo.push_back(transaccion);  // Escribir el dato nuevo
          end
        end
-       reset: begin // en caso de reset vacía la fifo simulada y envía todos los datos perdidos al SB
+       reset: begin // en caso de reset vacia la fifo simulada, resetea reads_ahead
+         reads_ahead = 0;  // Despues del reset ambos punteros van a 0, se resincroniza
          contador_auxiliar = emul_fifo.size();
          for(int i =0; i<contador_auxiliar; i++)begin
            auxiliar = emul_fifo.pop_front();
@@ -111,10 +140,10 @@ class checker_c #(parameter width=16, parameter depth =8);
          end
        end
        default: begin
-         $display("[%g] Checker Error: la transacción recibida no tiene tipo valido",$time);
-         $finish;
+         $display("[%g] Checker Error: tipo de transaccion desconocido, se ignora",$time);
+         errores++;
        end
      endcase    
    end 
   endtask
-endclass 
+endclass

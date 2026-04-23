@@ -54,6 +54,9 @@ class ambiente #(parameter width = 16, parameter depth = 8);
   // Test → ScoreBoard: órdenes de reporte
   comando_test_sb_mbx      test_sb_mbx;
 
+  // Checker → ScoreBoard: notificaciones de error del DUT
+  mailbox #(int)           error_mbx;
+
   // -----------------------------------------------------------------------
   // Constructor: instancia mailboxes y componentes, luego los conecta
   // -----------------------------------------------------------------------
@@ -61,6 +64,7 @@ class ambiente #(parameter width = 16, parameter depth = 8);
 
     // -- Instanciación de mailboxes --
     test_gen_mbx  = new();
+    error_mbx     = new();
     gen_agnt_mbx  = new();
     agnt_drv_mbx  = new();
     mon_chkr_mbx  = new();
@@ -96,11 +100,13 @@ class ambiente #(parameter width = 16, parameter depth = 8);
     // -- Conexión del Checker --
     checker_inst.mon_chkr_mbx  = mon_chkr_mbx;
     checker_inst.chkr_sb_mbx   = chkr_sb_mbx;
+    checker_inst.error_mbx     = error_mbx;
 
     // -- Conexión del ScoreBoard --
     scoreboard_inst.chkr_sb_mbx  = chkr_sb_mbx;
     scoreboard_inst.agnt_sb_mbx  = agnt_sb_mbx;
     scoreboard_inst.test_sb_mbx  = test_sb_mbx;
+    scoreboard_inst.error_mbx    = error_mbx;
 
   endfunction
 

@@ -15,7 +15,7 @@
 
             // Detectar lectura/escritura simultánea PRIMERO (antes que los casos individuales)
             // Si no se revisa primero, los if separados generarían dos transacciones en vez de una
-            if (vif.push && vif.pop && vif.pndng) begin
+            if (vif.push && vif.pop) begin
                 transaction = new;
                 transaction.tipo   = lectura_escritura;
                 transaction.dato   = vif.dato_in;    // El dato que entra al FIFO
