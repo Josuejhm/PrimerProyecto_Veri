@@ -8,11 +8,14 @@ class driver #(parameter width =16);
 
   task run();
     $display("[%g]  El driver fue inicializado",$time);
-    // reset a la interfaz
-    vif.rst=1;  
+    // Reset inicial: mantener rst=1 por un ciclo completo y luego soltar
+    vif.rst  = 1;
+    vif.push = 0;
+    vif.pop  = 0;
+    vif.dato_in = 0;
     @(posedge vif.clk);
-    vif.rst=1;
     @(posedge vif.clk);
+    vif.rst = 0;
 
     forever begin
       trans_fifo #(.width(width)) transaction; 
@@ -32,33 +35,38 @@ class driver #(parameter width =16);
       transaction.print("Driver: Transaccion recibida");
       $display("Transacciones pendientes en el mbx agnt_drv = %g",agnt_drv_mbx.num());
 
-      // Esperar el número de ciclos de retardo que se indique en la transacción
+      // Esperar el número de ciclos de retardo que se indique en la transacción.
+      // dato_in solo se mantiene durante el retardo si la transaccion escribe datos.
       while(espera < transaction.retardo)begin
         @(posedge vif.clk);
         espera = espera+1;
-        vif.dato_in = transaction.dato;   // Mantener el dato durante el retardo
+        if (transaction.tipo == escritura || transaction.tipo == lectura_escritura)
+          vif.dato_in = transaction.dato;
       end
 
       // Activar la señal correspondiente dependiendo del tipo de transacción
       case(transaction.tipo)
 	      lectura: begin
-	        @(posedge vif.clk);
+	        // Activa pop en el ciclo actual; el flanco final del loop cierra la transaccion
 	        vif.pop = 1;
-	        transaction.print("Driver: Transaccion ejecutada");
+	        transaction.tiempo = $time;
+	        transaction.print("Driver: Transaccion lectura ejecutada");
 	      end
 	      escritura: begin
-	        vif.push = 1; 
-	        transaction.print("Driver: Transaccion ejecutada");
+	        vif.push = 1;
+	        transaction.tiempo = $time;
+	        transaction.print("Driver: Transaccion escritura ejecutada");
 	      end
 	      reset: begin
-	        vif.rst =1; 
-	        transaction.print("Driver: Transaccion ejecutada");
+	        vif.rst = 1;
+	        transaction.tiempo = $time;
+	        transaction.print("Driver: Transaccion reset ejecutada");
 	      end
 	      lectura_escritura: begin   // Activa push y pop en el mismo ciclo
-	        @(posedge vif.clk);
-	        vif.push = 1;
-	        vif.pop  = 1;
+	        vif.push    = 1;
+	        vif.pop     = 1;
 	        vif.dato_in = transaction.dato;
+	        transaction.tiempo = $time;
 	        transaction.print("Driver: Transaccion lectura_escritura ejecutada");
 	      end
   

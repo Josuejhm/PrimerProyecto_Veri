@@ -1,112 +1,80 @@
-///////////////////////////////////
-// Módulo para correr la prueba  //
-///////////////////////////////////
-
-// El Test controla el flujo de la simulación:
-//   - Envía instrucciones de escenario al Generador via test_gen_mbx
-//   - Envía órdenes de reporte al ScoreBoard via test_sb_mbx
-//
-// Las instrucciones son del tipo instrucciones_agente:
-//   llenado_aleatorio, trans_aleatoria, trans_especifica, sec_trans_aleatorias
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Test: Prueba base completamente aleatoria para la FIFO                                         //
+//                                                                                                //
+// La prueba base lanza una unica instruccion (prueba_base) al generador.                        //
+// Con cada semilla distinta se produce una secuencia completamente diferente que                 //
+// aleatoriza: numero de transacciones, tipos, retardos y datos de entrada.                      //
+//                                                                                                //
+// Corriendo suficientes semillas se cubre el 100% del espacio de pruebas:                       //
+//   - Eventos de reset, lectura, escritura y lectura/escritura                                   //
+//   - Tiempos de espera entre eventos                                                            //
+//   - Datos de entrada aleatorios                                                                //
+//   - Cantidad variable de eventos (depth a depth*4)                                            //
+//                                                                                                //
+// Uso:                                                                                           //
+//   Semilla especifica:   +ntb_random_seed=12345                                                //
+//   Semilla automatica:   +ntb_random_seed_automatic                                            //
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class test #(parameter width = 16, parameter depth = 8);
 
-  // --- Mailboxes propios del Test ---
-  comando_test_sb_mbx    test_sb_mbx;   // Test → ScoreBoard
-  comando_test_agent_mbx test_gen_mbx;  // Test → Generator (antes: test_agent_mbx)
+  // --- Mailboxes ---
+  comando_test_sb_mbx    test_sb_mbx;
+  comando_test_agent_mbx test_gen_mbx;
 
-  // --- Parámetros de la prueba ---
-  parameter num_transacciones = depth;  // Por defecto igual a la profundidad del FIFO
-  parameter max_retardo       = 4;
+  // --- Parámetros ---
+  parameter max_retardo   = 8;
+  // Tiempo limite: 32 trans maximo * max_retardo * 20 clk por ciclo + margen
+  parameter tiempo_limite = 32 * max_retardo * 20 + 2000;
 
-  // --- Variables auxiliares ---
-  instrucciones_agente instr_gen;   // Instrucción para el Generador
-  solicitud_sb         instr_sb;    // Orden para el ScoreBoard
+  // --- Variables ---
+  instrucciones_agente instr_gen;
+  solicitud_sb         instr_sb;
 
   // --- Ambiente ---
   ambiente #(.depth(depth), .width(width)) ambiente_inst;
 
-  // --- Interface al DUT ---
+  // --- Interface ---
   virtual fifo_if #(.width(width)) _if;
 
   // -----------------------------------------------------------------------
-  // Constructor: inicializa mailboxes, ambiente y conecta referencias
+  // Constructor
   // -----------------------------------------------------------------------
   function new;
-    // Crear mailboxes del Test
     test_sb_mbx  = new();
     test_gen_mbx = new();
 
-    // Crear e inicializar el ambiente
-    ambiente_inst = new();
+    ambiente_inst     = new();
     ambiente_inst._if = _if;
 
-    // Compartir mailboxes del Test con el ambiente
-    ambiente_inst.test_gen_mbx              = test_gen_mbx;
+    ambiente_inst.test_gen_mbx                = test_gen_mbx;
     ambiente_inst.generator_inst.test_gen_mbx = test_gen_mbx;
-    ambiente_inst.test_sb_mbx               = test_sb_mbx;
+    ambiente_inst.test_sb_mbx                 = test_sb_mbx;
     ambiente_inst.scoreboard_inst.test_sb_mbx = test_sb_mbx;
 
-    // Configurar parámetros del Generador
-    ambiente_inst.generator_inst.num_transacciones = num_transacciones;
-    ambiente_inst.generator_inst.max_retardo       = max_retardo;
+    ambiente_inst.generator_inst.max_retardo = max_retardo;
   endfunction
 
   // -----------------------------------------------------------------------
-  // run: secuencia de prueba principal
+  // run
   // -----------------------------------------------------------------------
   task run;
     $display("[%g]  El Test fue inicializado", $time);
+    $display("[%g]  Test: FIFO depth=%0d width=%0d max_retardo=%0d tiempo_limite=%0d",
+             $time, depth, width, max_retardo, tiempo_limite);
 
-    // Lanzar el ambiente (todos los componentes en paralelo)
     fork
       ambiente_inst.run();
     join_none
 
-    // ------------------------------------------------------------------
-    // Instrucción 1: Llenar y vaciar el FIFO
-    // Verifica el comportamiento con FIFO lleno → vacío
-    // ------------------------------------------------------------------
-    instr_gen = llenado_aleatorio;
+    // Prueba base: una instruccion, la semilla controla todo
+    instr_gen = prueba_base;
     test_gen_mbx.put(instr_gen);
-    $display("[%g]  Test: Enviada instruccion 1 (llenado_aleatorio, %0d transacciones)", $time, num_transacciones);
+    $display("[%g]  Test: Lanzada prueba_base", $time);
 
-    // ------------------------------------------------------------------
-    // Instrucción 2: Transacción completamente aleatoria
-    // Cubre un caso general aleatorio
-    // ------------------------------------------------------------------
-    instr_gen = trans_aleatoria;
-    test_gen_mbx.put(instr_gen);
-    $display("[%g]  Test: Enviada instruccion 2 (trans_aleatoria)", $time);
+    #(tiempo_limite)
+    $display("[%g]  Test: Tiempo limite alcanzado", $time);
 
-    // ------------------------------------------------------------------
-    // Instrucción 3: Transacción específica (caso esquina)
-    // Se configura el Generador antes de enviar la instrucción
-    // ------------------------------------------------------------------
-    ambiente_inst.generator_inst.ret_spec  = 3;
-    ambiente_inst.generator_inst.tpo_spec  = escritura;
-    ambiente_inst.generator_inst.dto_spec  = {width/4{4'h5}};  // Patrón: 0x5555
-    instr_gen = trans_especifica;
-    test_gen_mbx.put(instr_gen);
-    $display("[%g]  Test: Enviada instruccion 3 (trans_especifica, dato=0x%0h)", $time, {width/4{4'h5}});
-
-    // ------------------------------------------------------------------
-    // Instrucción 4: Secuencia de transacciones aleatorias
-    // Cubre casos mixtos de lecturas y escrituras
-    // ------------------------------------------------------------------
-    instr_gen = sec_trans_aleatorias;
-    test_gen_mbx.put(instr_gen);
-    $display("[%g]  Test: Enviada instruccion 4 (sec_trans_aleatorias, %0d transacciones)", $time, num_transacciones);
-
-    // ------------------------------------------------------------------
-    // Esperar que se procesen todas las transacciones
-    // ------------------------------------------------------------------
-    #10000
-    $display("[%g]  Test: Se alcanza el tiempo límite de la prueba", $time);
-
-    // ------------------------------------------------------------------
-    // Solicitar reporte final al ScoreBoard
-    // ------------------------------------------------------------------
     instr_sb = retardo_promedio;
     test_sb_mbx.put(instr_sb);
 

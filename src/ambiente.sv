@@ -89,12 +89,13 @@ class ambiente #(parameter width = 16, parameter depth = 8);
     agent_inst.agnt_drv_mbx  = agnt_drv_mbx;
     agent_inst.agnt_sb_mbx   = agnt_sb_mbx;
 
-    // -- Conexión del Driver (la interface se conecta en el test_bench) --
-    driver_inst.vif           = _if;
+    // -- Conexión del Driver --
+    // NOTA: driver_inst.vif NO se asigna aqui porque _if es null en este punto.
+    // La interface virtual se propaga desde el test_bench despues de new(),
+    // via: ambiente_inst.driver_inst.vif = _if  y  ambiente_inst.monitor_inst.vif = _if
     driver_inst.agnt_drv_mbx  = agnt_drv_mbx;
 
     // -- Conexión del Monitor --
-    monitor_inst.vif           = _if;
     monitor_inst.mon_chkr_mbx  = mon_chkr_mbx;
 
     // -- Conexión del Checker --

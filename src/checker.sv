@@ -98,21 +98,29 @@ class checker_c #(parameter width=16, parameter depth =8);
          end
        end
        lectura_escritura: begin
-         // Caso: push=1 y pop=1 en el mismo ciclo
+         // Caso: push=1 y pop=1 en el mismo ciclo.
          // El FIFO saca el dato más antiguo y mete el nuevo dato simultáneamente.
          // El tamaño del FIFO no cambia, pero sí su contenido.
          // Casos borde:
-         //   - FIFO vacío: no hay nada que sacar → se genera underflow, igual se escribe
-         //   - FIFO lleno: se saca uno y se mete uno → no hay overflow
-         if (emul_fifo.size() == 0) begin
-           // FIFO vacio: ambos punteros (wrPtr y rdPtr) avanzan juntos en el hardware.
-           // El dato escrito queda en una posicion que rdPtr ya supero → dato PERDIDO.
-           // El FIFO sigue vacio despues de la operacion.
+         //   - reads_ahead > 0 : rdPtr esta adelantado. El pop avanza rdPtr un lugar mas
+         //                       y el push lo acorta, neto = 0. Pero ambos datos son
+         //                       invalidos → underflow, reads_ahead no cambia.
+         //   - emul_fifo vacio  : underflow normal, el dato escrito se pierde.
+         //   - emul_fifo lleno  : se saca uno y se mete uno, no hay overflow.
+         if (reads_ahead > 0) begin
+           // rdPtr adelantado: pop++ y push-- se cancelan, neto reads_ahead = 0 cambio.
+           // Tanto el dato leido como el escrito son invalidos.
+           to_sb.tiempo_pop = transaccion.tiempo;
+           to_sb.underflow  = 1;
+           to_sb.print("Checker: lectura_escritura con rdPtr adelantado, underflow");
+           chkr_sb_mbx.put(to_sb);
+         end else if (emul_fifo.size() == 0) begin
+           // FIFO vacio: ambos punteros avanzan juntos en el hardware.
+           // El dato escrito queda en posicion que rdPtr ya supero, dato PERDIDO.
            to_sb.tiempo_pop = transaccion.tiempo;
            to_sb.underflow  = 1;
            to_sb.print("Checker: lectura_escritura FIFO vacio, underflow, dato escrito se pierde");
            chkr_sb_mbx.put(to_sb);
-           // NO se agrega a emul_fifo: el hardware deja el FIFO vacio
          end else begin
            // FIFO con datos: verificar dato_leido contra emul_fifo, luego agregar dato escrito
            auxiliar = emul_fifo.pop_front();
@@ -132,20 +140,41 @@ class checker_c #(parameter width=16, parameter depth =8);
              if (error_mbx != null) error_mbx.put(1);
              $display("[%g] Checker: Total errores = %0d, se continua la simulacion",$time, errores);
            end
-           emul_fifo.push_back(transaccion);  // El dato escrito entra al FIFO
+           // Agregar el dato ESCRITO al emul_fifo como entrada limpia de tipo escritura.
+           // Si se guardara 'transaccion' directamente, auxiliar.dato_leido contendria
+           // basura de la lectura anterior y podria corromper verificaciones futuras.
+           begin
+             trans_fifo #(.width(width)) entrada_escritura;
+             entrada_escritura        = new;
+             entrada_escritura.tipo   = escritura;
+             entrada_escritura.dato   = transaccion.dato;   // dato que se escribio
+             entrada_escritura.tiempo = transaccion.tiempo;
+             emul_fifo.push_back(entrada_escritura);
+           end
          end
        end
-       reset: begin // en caso de reset vacia la fifo simulada, resetea reads_ahead
-         reads_ahead = 0;  // Despues del reset ambos punteros van a 0, se resincroniza
+       reset: begin
+         // Vacia la fifo simulada y resetea reads_ahead.
+         // Siempre notifica al scoreboard al menos una vez para que el contador
+         // de resets sea correcto, independientemente de si habia datos o no.
+         reads_ahead = 0;
          contador_auxiliar = emul_fifo.size();
-         for(int i =0; i<contador_auxiliar; i++)begin
-           auxiliar = emul_fifo.pop_front();
+         if (contador_auxiliar == 0) begin
+           // Reset con fifo vacia: notificar igual para que el SB cuente el evento
            to_sb.clean();
-           to_sb.dato_enviado = auxiliar.dato;
-           to_sb.tiempo_push = auxiliar.tiempo;
            to_sb.reset = 1;
-           to_sb.print("Checker: Reset");
+           to_sb.print("Checker: Reset (fifo ya estaba vacia)");
            chkr_sb_mbx.put(to_sb);
+         end else begin
+           for(int i = 0; i < contador_auxiliar; i++) begin
+             auxiliar = emul_fifo.pop_front();
+             to_sb.clean();
+             to_sb.dato_enviado = auxiliar.dato;
+             to_sb.tiempo_push  = auxiliar.tiempo;
+             to_sb.reset = 1;
+             to_sb.print("Checker: Reset");
+             chkr_sb_mbx.put(to_sb);
+           end
          end
        end
        default: begin

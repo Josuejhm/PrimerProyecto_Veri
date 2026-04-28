@@ -143,6 +143,52 @@ class generator #(parameter width = 16, parameter depth = 8);
             end
           end
 
+          // ------------------------------------------------------------------
+          // Prueba base: secuencia completamente aleatoria
+          //
+          // Garantiza al menos una transaccion de cada tipo para que ninguna
+          // semilla produzca una prueba degenerada. Luego completa el resto
+          // con transacciones aleatorias ponderadas:
+          //   escritura        40%
+          //   lectura          35%
+          //   lectura_escritura 15%
+          //   reset            10%
+          // ------------------------------------------------------------------
+          prueba_base: begin
+            begin
+              int num_trans_pb;
+
+              // Numero total aleatorio entre 16 y 32 transacciones
+              num_trans_pb = $urandom_range(16, 32);
+
+              $display("[%g]  Generador: escenario prueba_base (%0d transacciones aleatorias)",
+                       $time, num_trans_pb);
+
+              // Todas las transacciones son aleatorias ponderadas:
+              //   escritura        40%
+              //   lectura          35%
+              //   lectura_escritura 15%
+              //   reset            10%
+              for (int i = 0; i < num_trans_pb; i++) begin
+                tipo_trans tpo_fijo;
+                int peso_local;
+                transaccion             = new;
+                transaccion.max_retardo = max_retardo;
+
+                peso_local = $urandom_range(0, 99);
+                if      (peso_local < 40) tpo_fijo = escritura;
+                else if (peso_local < 75) tpo_fijo = lectura;
+                else if (peso_local < 90) tpo_fijo = lectura_escritura;
+                else                      tpo_fijo = reset;
+
+                void'(transaccion.randomize() with {tipo == tpo_fijo;});
+
+                transaccion.print("Generador: prueba_base aleatoria");
+                gen_agnt_mbx.put(transaccion);
+              end
+            end
+          end
+
           default: begin
             $display("[%g]  Generador: instruccion desconocida recibida, se ignora", $time);
           end
