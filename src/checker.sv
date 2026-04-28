@@ -157,23 +157,31 @@ class checker_c #(parameter width=16, parameter depth =8);
          // Vacia la fifo simulada y resetea reads_ahead.
          // Siempre notifica al scoreboard al menos una vez para que el contador
          // de resets sea correcto, independientemente de si habia datos o no.
+         //
+         // IMPORTANTE: se crea un objeto trans_sb nuevo por cada iteracion.
+         // Si se reutilizara 'to_sb', el mailbox guardaria 8 referencias al
+         // mismo objeto y el scoreboard veria 8 veces el ultimo dato escrito.
          reads_ahead = 0;
          contador_auxiliar = emul_fifo.size();
          if (contador_auxiliar == 0) begin
            // Reset con fifo vacia: notificar igual para que el SB cuente el evento
-           to_sb.clean();
-           to_sb.reset = 1;
-           to_sb.print("Checker: Reset (fifo ya estaba vacia)");
-           chkr_sb_mbx.put(to_sb);
+           begin
+             trans_sb #(.width(width)) to_sb_rst;
+             to_sb_rst       = new();
+             to_sb_rst.reset = 1;
+             to_sb_rst.print("Checker: Reset (fifo ya estaba vacia)");
+             chkr_sb_mbx.put(to_sb_rst);
+           end
          end else begin
            for(int i = 0; i < contador_auxiliar; i++) begin
-             auxiliar = emul_fifo.pop_front();
-             to_sb.clean();
-             to_sb.dato_enviado = auxiliar.dato;
-             to_sb.tiempo_push  = auxiliar.tiempo;
-             to_sb.reset = 1;
-             to_sb.print("Checker: Reset");
-             chkr_sb_mbx.put(to_sb);
+             trans_sb #(.width(width)) to_sb_rst;  // nuevo objeto por iteracion
+             to_sb_rst              = new();
+             auxiliar               = emul_fifo.pop_front();
+             to_sb_rst.dato_enviado = auxiliar.dato;
+             to_sb_rst.tiempo_push  = auxiliar.tiempo;
+             to_sb_rst.reset        = 1;
+             to_sb_rst.print("Checker: Reset");
+             chkr_sb_mbx.put(to_sb_rst);
            end
          end
        end

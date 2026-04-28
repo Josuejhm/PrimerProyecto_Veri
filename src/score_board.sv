@@ -26,6 +26,9 @@ class score_board #(parameter width=16);
   int retardo_total             = 0;
   int total_esperadas           = 0;
   int errores_checker           = 0;  // Errores reportados por el checker
+  bit en_reset                  = 0;  // Flag para contar un solo evento de reset
+                                      // aunque el checker mande un mensaje por cada
+                                      // dato que habia en el FIFO al momento del reset
   mailbox #(int) error_mbx;         // Mailbox para recibir notificaciones de error del Checker
 
   solicitud_sb orden;
@@ -44,7 +47,17 @@ class score_board #(parameter width=16);
         end
         if (transaccion_entrante.overflow)   transacciones_overflow++;
         if (transaccion_entrante.underflow)  transacciones_underflow++;
-        if (transaccion_entrante.reset)      transacciones_reset++;
+        // Contar un solo evento de reset aunque el checker mande un mensaje
+        // por cada dato que habia en el FIFO. en_reset se activa con el primer
+        // rst=1 y se desactiva cuando llega un mensaje con rst=0.
+        if (transaccion_entrante.reset) begin
+          if (!en_reset) begin
+            transacciones_reset++;
+            en_reset = 1;
+          end
+        end else begin
+          en_reset = 0;
+        end
         scoreboard.push_back(transaccion_entrante);
 
       end else if (agnt_sb_mbx.num() > 0) begin

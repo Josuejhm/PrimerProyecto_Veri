@@ -1,19 +1,9 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-// Test: Prueba base completamente aleatoria para la FIFO                                         //
+// Test: Siempre lanza prueba_base. Los plusargs controlan el escenario.                         //
 //                                                                                                //
-// La prueba base lanza una unica instruccion (prueba_base) al generador.                        //
-// Con cada semilla distinta se produce una secuencia completamente diferente que                 //
-// aleatoriza: numero de transacciones, tipos, retardos y datos de entrada.                      //
+// Sin plusargs → prueba general aleatoria (defaults internos del generador).                    //
 //                                                                                                //
-// Corriendo suficientes semillas se cubre el 100% del espacio de pruebas:                       //
-//   - Eventos de reset, lectura, escritura y lectura/escritura                                   //
-//   - Tiempos de espera entre eventos                                                            //
-//   - Datos de entrada aleatorios                                                                //
-//   - Cantidad variable de eventos (depth a depth*4)                                            //
-//                                                                                                //
-// Uso:                                                                                           //
-//   Semilla especifica:   +ntb_random_seed=12345                                                //
-//   Semilla automatica:   +ntb_random_seed_automatic                                            //
+// Ver comando.sh para los plusargs de cada caso de esquina.                                     //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class test #(parameter width = 16, parameter depth = 8);
@@ -23,9 +13,11 @@ class test #(parameter width = 16, parameter depth = 8);
   comando_test_agent_mbx test_gen_mbx;
 
   // --- Parámetros ---
-  parameter max_retardo   = 8;
-  // Tiempo limite: 32 trans maximo * max_retardo * 20 clk por ciclo + margen
-  parameter tiempo_limite = 32 * max_retardo * 20 + 2000;
+  parameter max_retardo = 8;
+
+  // Tiempo limite conservador: cubre prefijo=depth + n_trans_max=40 con retardo_max=8
+  // (depth + 40) * max_retardo * 20 + margen
+  parameter tiempo_limite = (depth + 40) * max_retardo * 20 + 5000;
 
   // --- Variables ---
   instrucciones_agente instr_gen;
@@ -37,9 +29,6 @@ class test #(parameter width = 16, parameter depth = 8);
   // --- Interface ---
   virtual fifo_if #(.width(width)) _if;
 
-  // -----------------------------------------------------------------------
-  // Constructor
-  // -----------------------------------------------------------------------
   function new;
     test_sb_mbx  = new();
     test_gen_mbx = new();
@@ -55,9 +44,6 @@ class test #(parameter width = 16, parameter depth = 8);
     ambiente_inst.generator_inst.max_retardo = max_retardo;
   endfunction
 
-  // -----------------------------------------------------------------------
-  // run
-  // -----------------------------------------------------------------------
   task run;
     $display("[%g]  El Test fue inicializado", $time);
     $display("[%g]  Test: FIFO depth=%0d width=%0d max_retardo=%0d tiempo_limite=%0d",
@@ -67,10 +53,10 @@ class test #(parameter width = 16, parameter depth = 8);
       ambiente_inst.run();
     join_none
 
-    // Prueba base: una instruccion, la semilla controla todo
+    // Siempre prueba_base — los plusargs ajustan los constraints internamente
     instr_gen = prueba_base;
     test_gen_mbx.put(instr_gen);
-    $display("[%g]  Test: Lanzada prueba_base", $time);
+    $display("[%g]  Test: prueba_base lanzada", $time);
 
     #(tiempo_limite)
     $display("[%g]  Test: Tiempo limite alcanzado", $time);
