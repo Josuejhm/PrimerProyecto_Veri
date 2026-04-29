@@ -26,7 +26,7 @@ PrimerProyecto_Veri/
 
 ## Cómo correr en el servidor
 
-Todos los archivos deben estar en **una misma carpeta** en el servidor. Copie todos los `.sv` y el `comando.sh` al mismo directorio.
+Todos los archivos deben estar en **una misma carpeta** en el servidor.
 
 ```bash
 # 1. Cargar el ambiente de Synopsys
@@ -65,6 +65,9 @@ Sin plusargs corre la prueba general aleatoria con los siguientes defaults:
 | `+retardo_max=N` | 7 | Máximo retardo entre transacciones (ciclos) |
 | `+dato_min=N` | 0 | Valor mínimo del dato |
 | `+dato_max=N` | 2^width-1 | Valor máximo del dato |
+| `+prefijo=N` | 0 | Escrituras forzadas antes de la prueba aleatoria |
+| `+alternancia=1` | 0 | Datos de escritura ciclados entre 0x0000, 0x5555, 0xAAAA, 0xFFFF |
+| `+semilla=N` | automática | Semilla de aleatorización (para reproducir resultados) |
 
 Para reproducir un resultado específico:
 
