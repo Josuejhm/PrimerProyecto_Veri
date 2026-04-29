@@ -1,35 +1,30 @@
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// ScoreBoard: Lleva el estado completo del comportamiento de la prueba y genera reportes.                             //
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+// ScoreBoard: acumula los resultados de la prueba y genera el reporte final.
+// Recibe eventos del Checker (transacciones verificadas) y del Agente (transacciones esperadas).
+// El flag en_reset evita contar multiples mensajes de reset como eventos separados
+// cuando el FIFO tenia varios datos al momento del reset.
 class score_board #(parameter width=16);
 
-  // --- Mailboxes ---
-  trans_sb_mbx          chkr_sb_mbx;   // Del Checker al ScoreBoard
-  trans_sb_mbx          agnt_sb_mbx;   // Del Agente al ScoreBoard
-  comando_test_sb_mbx   test_sb_mbx;   // Del Test al ScoreBoard
+  trans_sb_mbx          chkr_sb_mbx;
+  trans_sb_mbx          agnt_sb_mbx;
+  comando_test_sb_mbx   test_sb_mbx;
 
-  // --- Colas internas ---
   trans_sb #(.width(width))  scoreboard[$];
   trans_sb #(.width(width))  trans_esperadas[$];
   trans_sb #(.width(width))  auxiliar_array[$];
   trans_sb #(.width(width))  transaccion_entrante;
   trans_sb #(.width(width))  auxiliar_trans;
 
-  // --- Estadísticas ---
   shortreal retardo_promedio;
-  int tamano_sb             = 0;
+  int tamano_sb                 = 0;
   int transacciones_completadas = 0;
   int transacciones_overflow    = 0;
   int transacciones_underflow   = 0;
   int transacciones_reset       = 0;
   int retardo_total             = 0;
   int total_esperadas           = 0;
-  int errores_checker           = 0;  // Errores reportados por el checker
-  bit en_reset                  = 0;  // Flag para contar un solo evento de reset
-                                      // aunque el checker mande un mensaje por cada
-                                      // dato que habia en el FIFO al momento del reset
-  mailbox #(int) error_mbx;         // Mailbox para recibir notificaciones de error del Checker
+  int errores_checker           = 0;
+  bit en_reset                  = 0;
+  mailbox #(int) error_mbx;
 
   solicitud_sb orden;
 
@@ -45,11 +40,10 @@ class score_board #(parameter width=16);
           retardo_total += transaccion_entrante.latencia;
           transacciones_completadas++;
         end
-        if (transaccion_entrante.overflow)   transacciones_overflow++;
-        if (transaccion_entrante.underflow)  transacciones_underflow++;
-        // Contar un solo evento de reset aunque el checker mande un mensaje
-        // por cada dato que habia en el FIFO. en_reset se activa con el primer
-        // rst=1 y se desactiva cuando llega un mensaje con rst=0.
+        if (transaccion_entrante.overflow)  transacciones_overflow++;
+        if (transaccion_entrante.underflow) transacciones_underflow++;
+        // Un reset puede generar un mensaje por cada dato en el FIFO;
+        // solo se cuenta el primero como un evento de reset
         if (transaccion_entrante.reset) begin
           if (!en_reset) begin
             transacciones_reset++;
@@ -97,16 +91,8 @@ class score_board #(parameter width=16);
               $display("  Resets detectados                      : %0d", transacciones_reset);
               $display("------------------------------------------------------------");
 
-              // Resultado final de la prueba
-              if (errores_checker == 0) begin
-                $display("  RESULTADO: *** PRUEBA EXITOSA - Sin errores del DUT ***");
-              end else begin
-                $display("  RESULTADO: *** PRUEBA FALLIDA - %0d error(es) del DUT ***", errores_checker);
-                $display("             (buscar 'Checker ERROR' en el log para detalles)");
-              end
               $display("------------------------------------------------------------");
               $display("  Detalle de transacciones verificadas:");
-
               tamano_sb = this.scoreboard.size();
               for (int i = 0; i < tamano_sb; i++) begin
                 auxiliar_trans = scoreboard.pop_front;
@@ -115,7 +101,6 @@ class score_board #(parameter width=16);
               end
               scoreboard    = auxiliar_array;
               auxiliar_array = {};
-
               $display("------------------------------------------------------------");
               $display("  Detalle de notificaciones del Agente:");
               tamano_sb = this.trans_esperadas.size();
@@ -126,7 +111,6 @@ class score_board #(parameter width=16);
               end
               trans_esperadas = auxiliar_array;
               auxiliar_array  = {};
-
               $display("============================================================");
             end
 

@@ -1,29 +1,24 @@
-//////////////////////////////////////////////////////////////
-// Definición del tipo de transacciones posibles en la fifo //
-//////////////////////////////////////////////////////////////
-
+// Tipos de transaccion soportados por la FIFO
 typedef enum { lectura, escritura, reset, lectura_escritura } tipo_trans; 
 
-/////////////////////////////////////////////////////////////////////////////////////////
-//Transacción: este objeto representa las transacciones que entran y salen de la fifo. //
-/////////////////////////////////////////////////////////////////////////////////////////
+// Objeto de transaccion que circula entre los componentes del testbench.
+// dato      : valor que se escribe en el FIFO (aplica a escritura y lectura_escritura)
+// dato_leido: valor leido del FIFO (aplica a lectura y lectura_escritura)
+// retardo   : ciclos de espera antes de ejecutar la transaccion
+// Los limites de retardo y dato son ajustables en tiempo de simulacion
+// para implementar casos de esquina via plusargs.
 class trans_fifo #(parameter width = 16);
-  rand int retardo;           // retardo en ciclos antes de ejecutar la transaccion
-  rand bit[width-1:0] dato;   // dato que SE ESCRIBE (dato_in): escritura y lectura_escritura
-  bit[width-1:0] dato_leido;  // dato que SE LEE  (dato_out): lectura y lectura_escritura
-  int tiempo;                 // tiempo de simulacion en que se ejecuto la transaccion
-  rand tipo_trans tipo;       // lectura, escritura, reset, lectura_escritura
+  rand int retardo;
+  rand bit[width-1:0] dato;
+  bit[width-1:0] dato_leido;
+  int tiempo;
+  rand tipo_trans tipo;
   int max_retardo;
 
-  // -----------------------------------------------------------------------
-  // Constraints flexibles: límites ajustables en tiempo de simulación.
-  // El generador los modifica antes de llamar randomize() para
-  // implementar casos de esquina via plusargs.
-  // -----------------------------------------------------------------------
-  int retardo_min;   // límite inferior del retardo (default 1)
-  int retardo_max;   // límite superior del retardo (default max_retardo-1)
-  int dato_min;      // límite inferior del dato    (default 0)
-  int dato_max;      // límite superior del dato    (default 2^width - 1)
+  int retardo_min;
+  int retardo_max;
+  int dato_min;
+  int dato_max;
 
   constraint const_retardo { retardo >= retardo_min; retardo <= retardo_max; }
   constraint const_dato    { dato    >= dato_min;    dato    <= dato_max;    }
@@ -35,7 +30,6 @@ class trans_fifo #(parameter width = 16);
     this.tiempo      = tmp;
     this.tipo        = tpo;
     this.max_retardo = mx_rtrd;
-    // Valores por defecto de los límites
     this.retardo_min = 1;
     this.retardo_max = mx_rtrd - 1;
     this.dato_min    = 0;
@@ -50,6 +44,7 @@ class trans_fifo #(parameter width = 16);
     this.tipo       = lectura;
   endfunction
     
+  // Imprime solo los campos relevantes segun el tipo de transaccion
   function void print(string tag = "");
     case (this.tipo)
       lectura:
@@ -69,13 +64,8 @@ class trans_fifo #(parameter width = 16);
 endclass
 
 
-////////////////////////////////////////////////////////////////
-// Interface: Esta es la interface que se conecta con la FIFO //
-////////////////////////////////////////////////////////////////
-
-interface fifo_if #(parameter width =16) (
-  input clk
-);
+// Interface de conexion con el DUT
+interface fifo_if #(parameter width =16) (input clk);
   logic rst;
   logic pndng;
   logic full;
@@ -86,10 +76,8 @@ interface fifo_if #(parameter width =16) (
 endinterface
 
 
-////////////////////////////////////////////////////
-// Objeto de transacción usado en el scoreboard   //
-////////////////////////////////////////////////////
-
+// Objeto de transaccion usado por el Checker para comunicarse con el ScoreBoard.
+// Registra tiempos de push/pop, latencia y tipo de evento (completado, overflow, underflow, reset).
 class trans_sb #(parameter width=16);
   bit [width-1:0] dato_enviado;
   int tiempo_push;
@@ -129,26 +117,21 @@ class trans_sb #(parameter width=16);
   endfunction
 endclass
 
-/////////////////////////////////////////////////////////////////////////
-// Definición de estructura para generar comandos hacia el scoreboard  //
-/////////////////////////////////////////////////////////////////////////
+// Comandos que el Test envia al ScoreBoard
 typedef enum {retardo_promedio, reporte} solicitud_sb;
 
-/////////////////////////////////////////////////////////////////////////
-// Definición de estructura para generar comandos hacia el generador   //
-/////////////////////////////////////////////////////////////////////////
+// Instrucciones que el Test envia al Generador.
+// prueba_base cubre tanto la prueba general como los casos de esquina via plusargs.
 typedef enum {
   llenado_aleatorio,
   trans_aleatoria,
   trans_especifica,
   sec_trans_aleatorias,
   sec_lect_escr,
-  prueba_base       // Prueba general + casos de esquina via plusargs
+  prueba_base
 } instrucciones_agente;
 
-///////////////////////////////////////////////////////////////////////////////////////
-// Definicion de mailboxes                                                           //
-///////////////////////////////////////////////////////////////////////////////////////
+// Tipos de mailbox usados en el testbench
 typedef mailbox #(trans_fifo)           trans_fifo_mbx;
 typedef mailbox #(trans_sb)             trans_sb_mbx;
 typedef mailbox #(solicitud_sb)         comando_test_sb_mbx;

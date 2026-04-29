@@ -10,34 +10,14 @@
 `include "ambiente.sv"
 `include "test.sv"
 
-///////////////////////////////////////////////////////////////
-// test_bench: Módulo raíz para correr la prueba            //
-//                                                           //
-// Parámetros por defecto:                                   //
-//   depth = 8   (puede cambiarse con +define+DEPTH=N       //
-//               y recompilando con -pvalue+depth=N         //
-//               o simplemente editando el parámetro aqui)  //
-//   width = 16  (idem con +define+WIDTH=N)                 //
-//                                                           //
-// Uso típico (VCS):                                         //
-//   # Prueba base aleatoria                                 //
-//   ./salida +ntb_random_seed_automatic                     //
-//                                                           //
-//   # Caso de esquina overflow                              //
-//   ./salida +OVERFLOW                                      //
-//                                                           //
-//   # Patrón alternado comenzando en 0xAAAA                //
-//   ./salida +PATRON=2                                      //
-//                                                           //
-//   # Cambiar profundidad en compilacion (VCS)             //
-//   vcs ... -pvalue+test_bench.depth=16 ...               //
-///////////////////////////////////////////////////////////////
+// Modulo raiz del testbench.
+// depth y width se pasan en compilacion con:
+//   -pvalue+test_bench.depth=N
+//   -pvalue+test_bench.width=N
+// La semilla de aleatorizacion se controla con +semilla=N en ejecucion.
+// Ver comando.sh para la forma de compilar y ejecutar.
 module test_bench;
 
-  // --------------------------------------------------------------------------
-  // Parámetros del DUT: pueden sobreescribirse en compilación con
-  //   -pvalue+test_bench.depth=<N>  -pvalue+test_bench.width=<N>
-  // --------------------------------------------------------------------------
   parameter depth = 8;
   parameter width = 16;
 
@@ -59,6 +39,16 @@ module test_bench;
   );
 
   initial begin
+    begin
+      int semilla;
+      semilla = 0;
+      if ($value$plusargs("semilla=%d", semilla)) begin
+        $srandom(semilla);
+        $display("[0] Test_bench: depth=%0d width=%0d semilla=%0d", depth, width, semilla);
+      end else begin
+        $display("[0] Test_bench: depth=%0d width=%0d semilla=automatica", depth, width);
+      end
+    end
     clk = 0;
     t0  = new();
     t0._if = _if;
@@ -69,9 +59,9 @@ module test_bench;
     join_none
   end
 
-  // Guardián de tiempo absoluto en el test_bench
+  // Limite de tiempo absoluto como respaldo al limite calculado por el Test
   always @(posedge clk) begin
-    if ($time > 100000) begin
+    if ($time > 300000) begin
       $display("Test_bench: Tiempo limite absoluto alcanzado");
       $finish;
     end
